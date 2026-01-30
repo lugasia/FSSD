@@ -1,0 +1,548 @@
+<!-- Chosen Palette: "Clean Slate Security" - Light gray backgrounds (#f8fafc), White cards (#ffffff), Deep Navy text (#1e293b). Accents: Legit (Teal #14b8a6), Warning (Amber #f59e0b), Threat (Rose #e11d48). -->
+
+<!--
+    FIXES V4:
+    1. **Persistent Threat Pins:** Map markers for "THREAT" events are no longer removed when the threat ends. They remain as "Past Detections" (dimmed).
+    2. **Map Stability:** Maintained V3 layout fixes (explicit height).
+    3. **Settings:** Maintained V3 Settings button visibility.
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flycomm Sentinel | Multi-UE Spectral Dashboard</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+
+    <!-- Leaflet Maps (Real Map Engine) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <!-- Markdown Parser -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; color: #1e293b; }
+
+        /* Robust Chart Container */
+        .chart-wrapper { position: relative; width: 100%; height: 100%; overflow: hidden; }
+        .glass-panel { background: white; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); border-radius: 0.75rem; display: flex; flex-direction: column; }
+
+        .scrolling-log { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+        .scrolling-log::-webkit-scrollbar { width: 6px; }
+        .scrolling-log::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
+
+        /* Map Styles - Explicit Height is CRITICAL */
+        #tactical-map { z-index: 1; background: #e2e8f0; min-height: 100%; width: 100%; }
+
+        /* Markdown Styles */
+        .markdown-body h1 { font-size: 1.25em; font-weight: bold; margin-bottom: 0.5em; color: #1e293b; }
+        .markdown-body h2 { font-size: 1.1em; font-weight: bold; margin-top: 1em; margin-bottom: 0.5em; color: #334155; }
+        .markdown-body p { margin-bottom: 0.8em; line-height: 1.5; color: #475569; }
+        .markdown-body ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 0.8em; }
+        .markdown-body strong { font-weight: 600; color: #0f172a; }
+
+        /* Animation */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.33); opacity: 1; }
+            80%, 100% { opacity: 0; }
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden bg-slate-50">
+
+    <!-- Header / Command Bar -->
+    <header class="bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center shrink-0 z-20 shadow-sm h-16">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-blue-200 shadow-lg">F</div>
+            <div>
+                <h1 class="font-bold text-slate-800 text-lg leading-tight">Flycomm Sentinel</h1>
+                <p class="text-xs text-slate-500 font-medium">Spectral Awareness & Anomaly Detection</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+            <!-- EXPLICIT SETTINGS BUTTON -->
+            <button onclick="openSettings()" class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-md transition text-xs font-bold border border-slate-200">
+                <span>🔑</span> I Key
+            </button>
+
+            <!-- AI Report Button -->
+            <button onclick="generateMissionReport()" class="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-md shadow-sm hover:shadow-md hover:scale-105 transition-all text-xs font-semibold">
+                <span>✨ Generate Mission Report</span>
+            </button>
+
+            <!-- Simulation Controls -->
+            <div class="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200">
+                <button id="btn-play" class="px-3 py-1 bg-white shadow-sm rounded-md text-slate-700 text-sm font-medium hover:text-blue-600 transition" onclick="toggleSimulation()">
+                    ▶ Play
+                </button>
+                <button id="btn-pause" class="px-3 py-1 text-slate-500 text-sm font-medium hover:text-blue-600 transition hidden" onclick="toggleSimulation()">
+                    ⏸ Pause
+                </button>
+                <div class="w-px h-4 bg-slate-300 mx-2"></div>
+                <span class="text-xs text-slate-500 px-2">Speed:</span>
+                <select id="sim-speed" class="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer">
+                    <option value="1000">1x</option>
+                    <option value="500">2x</option>
+                    <option value="200">5x</option>
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <main class="flex-1 overflow-hidden p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 h-full min-h-0">
+
+        <!-- Column 1: MAP & Spatial (Left - Larger) -->
+        <section class="lg:col-span-6 flex flex-col gap-4 h-full min-h-0">
+            <!-- Tactical Map Panel - FORCED HEIGHT via flex -->
+            <div class="glass-panel flex-1 min-h-[50%] p-0 relative overflow-hidden group">
+                <div class="absolute top-4 left-4 z-[400]">
+                    <h2 class="font-bold text-slate-800 flex items-center gap-2 bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg border border-slate-200/50 shadow-md text-sm">
+                        <span class="text-lg">📍</span> Tactical Map
+                    </h2>
+                </div>
+
+                <!-- LEAFLET Map Container -->
+                <div id="tactical-map" class="bg-slate-200 flex items-center justify-center">
+                    <span class="text-slate-400 animate-pulse">Loading Map Engine...</span>
+                </div>
+
+                <!-- Legend -->
+                <div class="absolute bottom-5 left-5 bg-white/95 backdrop-blur p-2.5 rounded-lg border border-slate-200 text-[10px] shadow-lg pointer-events-none z-[400]">
+                    <div class="font-bold text-slate-600 mb-2 uppercase tracking-wide">Live Cluster (Team Alpha)</div>
+                    <div class="flex items-center gap-2 mb-1"><span class="w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-sm"></span> UE-01 (Commander)</div>
+                    <div class="flex items-center gap-2 mb-1"><span class="w-3 h-3 rounded-full bg-blue-300 border border-white"></span> UE Unit (2-5)</div>
+                    <div class="w-full h-px bg-slate-200 my-1"></div>
+                    <div class="flex items-center gap-2 mb-1"><span class="w-3 h-3 rounded bg-slate-700"></span> Cell Tower (Legit)</div>
+                    <div class="flex items-center gap-2"><span class="w-3 h-3 rounded rotate-45 bg-red-500"></span> Rogue Emitter</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Column 2: Data & Logs (Right) -->
+        <section class="lg:col-span-6 flex flex-col gap-4 h-full min-h-0">
+
+            <!-- Row 1: Charts -->
+            <div class="flex-1 min-h-0 grid grid-cols-2 gap-4">
+                <!-- RF Health -->
+                <div class="glass-panel p-4 relative">
+                    <div class="flex justify-between items-start mb-2 shrink-0">
+                        <div>
+                            <h2 class="font-bold text-slate-800 text-sm">RF Fingerprint</h2>
+                            <p class="text-[10px] text-slate-500">RSSI vs RSRP Delta</p>
+                        </div>
+                    </div>
+                    <div class="chart-wrapper flex-1 min-h-0">
+                        <canvas id="signalChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Timing Advance -->
+                <div class="glass-panel p-4 relative">
+                    <div class="flex justify-between items-start mb-2 shrink-0">
+                        <div>
+                            <h3 class="font-bold text-slate-800 text-sm">Timing Advance</h3>
+                            <p class="text-[10px] text-slate-500">Distance Verification</p>
+                        </div>
+                        <span id="dist-est" class="text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded text-xs font-mono font-bold">0 m</span>
+                    </div>
+                    <div class="chart-wrapper flex-1 min-h-0 flex justify-center items-center">
+                        <canvas id="taGauge"></canvas>
+                        <div class="absolute inset-0 flex items-center justify-center pt-8 pointer-events-none">
+                            <span id="ta-val-display" class="text-xl font-bold text-slate-700">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 2: Logs & Alerts -->
+            <div class="flex-1 min-h-0 grid grid-cols-2 gap-4">
+                 <!-- Alerts -->
+                 <div class="glass-panel p-0 overflow-hidden flex flex-col relative">
+                    <div class="p-3 border-b border-slate-100 bg-slate-50 shrink-0">
+                        <h2 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                            <span class="text-lg">🛡️</span> Anomaly Scanner
+                        </h2>
+                    </div>
+                    <div id="alert-feed" class="flex-1 overflow-y-auto scrolling-log p-2 bg-white space-y-2 relative">
+                        <div class="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none opacity-50">
+                            <span class="text-2xl mb-2">🔍</span>
+                            <span class="text-xs">Scanning...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Console -->
+                <div class="glass-panel p-0 overflow-hidden flex flex-col">
+                    <div class="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
+                        <h2 class="font-bold text-slate-800 text-xs uppercase tracking-wide">SIB Polling Log</h2>
+                        <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    </div>
+                    <div class="p-2 bg-slate-900 text-slate-300 font-mono text-[10px] leading-relaxed flex-1 overflow-y-auto scrolling-log" id="console-log">
+                        <div class="text-slate-500">> Booting SDK...</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Settings Modal (API Key) -->
+    <div id="settings-modal" class="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 transform scale-95 transition-transform duration-300" id="settings-content">
+            <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <span>🔑</span> API Key Configuration
+            </h3>
+            <div class="mb-4">
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Google Gemini API Key</label>
+                <input type="password" id="api-key-input" placeholder="Paste key here (starts with AIza...)" class="w-full p-3 border border-slate-300 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none shadow-sm">
+                <p class="text-[10px] text-slate-400 mt-2">Required for AI Threat Analysis. The key is stored locally in your browser.</p>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button onclick="closeSettings()" class="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg text-sm font-medium">Cancel</button>
+                <button onclick="saveSettings()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 shadow-sm transition">Save Key</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Analysis Modal -->
+    <div id="ai-modal" class="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col m-4 overflow-hidden transform scale-95 transition-transform duration-300 border border-white/20" id="ai-modal-content">
+            <div class="bg-gradient-to-r from-indigo-600 to-purple-700 p-4 flex justify-between items-center shrink-0 text-white">
+                <div class="flex items-center gap-3">
+                    <h3 class="font-bold text-lg tracking-tight" id="modal-title">AI Analysis</h3>
+                </div>
+                <button onclick="closeModal()" class="text-white/70 hover:text-white transition p-1 hover:bg-white/10 rounded-full">✕</button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1 markdown-body text-sm bg-white" id="modal-body">
+                <!-- Content goes here -->
+            </div>
+            <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end items-center shrink-0">
+                <button onclick="closeModal()" class="px-5 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 text-sm font-medium hover:bg-slate-50 hover:text-indigo-600 transition shadow-sm">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- API Key Management ---
+        let userApiKey = localStorage.getItem('gemini_api_key') || "";
+        const envApiKey = ""; // Injected by environment if available
+
+        function getApiKey() { return userApiKey || envApiKey; }
+
+        // Settings Modal Logic
+        const settingsModal = document.getElementById('settings-modal');
+        const settingsContent = document.getElementById('settings-content');
+        const apiKeyInput = document.getElementById('api-key-input');
+
+        function openSettings() {
+            apiKeyInput.value = userApiKey;
+            settingsModal.classList.remove('hidden');
+            setTimeout(() => { settingsModal.classList.remove('opacity-0'); settingsContent.classList.remove('scale-95'); }, 10);
+        }
+
+        function closeSettings() {
+            settingsModal.classList.add('opacity-0'); settingsContent.classList.add('scale-95');
+            setTimeout(() => settingsModal.classList.add('hidden'), 300);
+        }
+
+        function saveSettings() {
+            userApiKey = apiKeyInput.value.trim();
+            localStorage.setItem('gemini_api_key', userApiKey);
+            closeSettings();
+        }
+
+        async function callGemini(prompt, systemInstruction) {
+            const key = getApiKey();
+            if (!key) { openSettings(); return "Error: API Key missing."; }
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        systemInstruction: { parts: [{ text: systemInstruction }] }
+                    })
+                });
+
+                if (!response.ok) throw new Error(`API Error: ${response.status}`);
+                const data = await response.json();
+                return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response.";
+            } catch (error) { return `Analysis failed: ${error.message}`; }
+        }
+
+        // --- 1. Simulation Data & State ---
+        const START_LAT = 30.48578;
+        const START_LON = 35.175086;
+
+        let isPlaying = false;
+        let tick = 0;
+        let speed = 1000;
+        let timer = null;
+        let sessionLogs = [];
+
+        // Multi-UE State (Team Alpha)
+        let ueCluster = [];
+        for(let i=0; i<5; i++) {
+            ueCluster.push({
+                id: `UE-0${i+1}`,
+                lat: START_LAT + (Math.random()-0.5)*0.001,
+                lon: START_LON + (Math.random()-0.5)*0.001
+            });
+        }
+
+        const MAX_HISTORY = 30;
+        let history = { rsrp: Array(MAX_HISTORY).fill(-90), rssi: Array(MAX_HISTORY).fill(-70), labels: Array(MAX_HISTORY).fill('') };
+
+        const LEGIT_TOWERS = [
+            { id: '425-01-1801', lat: 30.488, lon: 35.178 },
+            { id: '425-01-1802', lat: 30.483, lon: 35.172 },
+            { id: '425-01-1803', lat: 30.487, lon: 35.170 }
+        ];
+
+        let currentCell = null;
+        let lastCellData = null;
+
+        // --- 2. Chart Initialization ---
+        const signalCtx = document.getElementById('signalChart').getContext('2d');
+        const signalChart = new Chart(signalCtx, {
+            type: 'line',
+            data: { labels: history.labels, datasets: [{ label: 'RSRP', data: history.rsrp, borderColor: '#1e293b', backgroundColor: '#1e293b', borderWidth: 2, tension: 0.4, pointRadius: 0 }, { label: 'RSSI', data: history.rssi, borderColor: '#cbd5e1', borderDash: [4, 4], borderWidth: 2, tension: 0.4, pointRadius: 0 }] },
+            options: { responsive: true, maintainAspectRatio: false, animation: { duration: 0 }, plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 9 }, usePointStyle: true } } }, scales: { y: { beginAtZero: false, max: -40, min: -120, grid: { color: '#f1f5f9' }, ticks: { font: { size: 9 } } }, x: { display: false } } }
+        });
+
+        const taCtx = document.getElementById('taGauge').getContext('2d');
+        const taChart = new Chart(taCtx, {
+            type: 'doughnut',
+            data: { labels: ['Distance', 'Range'], datasets: [{ data: [2, 63], backgroundColor: ['#3b82f6', '#f1f5f9'], borderWidth: 0, circumference: 240, rotation: 240 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, cutout: '85%' }
+        });
+
+        // --- 3. Leaflet Map Initialization ---
+        let map;
+        let ueMarkers = [];
+        let activeThreatMarker = null; // Renamed to clarify behavior
+        let taCircle = null;
+
+        window.onload = function() {
+            console.log("Initializing Map...");
+            try {
+                map = L.map('tactical-map', {
+                    center: [START_LAT, START_LON],
+                    zoom: 16,
+                    zoomControl: false,
+                    attributionControl: false
+                });
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© OpenStreetMap'
+                }).addTo(map);
+
+                const createIcon = (color, shape) => {
+                    const svg = shape === 'circle'
+                        ? `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="${color}" stroke="white" stroke-width="2"/></svg>`
+                        : `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M8 0L16 16H0L8 0Z" fill="${color}" stroke="white" stroke-width="2"/></svg>`;
+                    return L.divIcon({ className: 'custom-icon', html: svg, iconSize: [16, 16], iconAnchor: [8, 8] });
+                };
+
+                LEGIT_TOWERS.forEach(t => {
+                    L.marker([t.lat, t.lon], { icon: createIcon('#1e293b', 'triangle') })
+                     .addTo(map)
+                     .bindPopup(`Legit Cell: ${t.id}`);
+                });
+
+                ueCluster.forEach((ue, index) => {
+                    const color = index === 0 ? '#3b82f6' : '#93c5fd';
+                    const marker = L.marker([ue.lat, ue.lon], { icon: createIcon(color, 'circle') })
+                                    .addTo(map);
+                    ueMarkers.push(marker);
+                });
+
+                logConsole("Map Engine Loaded Successfully.");
+                logConsole(`Coordinates: ${START_LAT}, ${START_LON}`);
+
+            } catch (e) {
+                console.error("Map Load Error:", e);
+                document.getElementById('tactical-map').innerHTML = `<div class="p-4 text-center text-red-500">Map Error: ${e.message}</div>`;
+            }
+        };
+
+        // --- 4. Simulation Logic ---
+        function toggleSimulation() {
+            isPlaying = !isPlaying;
+            document.getElementById('btn-play').classList.toggle('hidden');
+            document.getElementById('btn-pause').classList.toggle('hidden');
+            if (isPlaying) {
+                speed = parseInt(document.getElementById('sim-speed').value);
+                runLoop();
+            } else {
+                clearTimeout(timer);
+            }
+        }
+
+        document.getElementById('sim-speed').addEventListener('change', (e) => {
+            speed = parseInt(e.target.value);
+        });
+
+        function runLoop() {
+            if (!isPlaying) return;
+            tick++;
+
+            const latMove = (Math.random() - 0.5) * 0.0001;
+            const lonMove = (Math.random() - 0.5) * 0.0001;
+            ueCluster.forEach(ue => { ue.lat += latMove; ue.lon += lonMove; });
+
+            let cellData = generateCellData(tick);
+            lastCellData = cellData;
+
+            updateDashboard(cellData);
+            if(map) updateMapVisuals(cellData);
+
+            timer = setTimeout(runLoop, speed);
+        }
+
+        function generateCellData(t) {
+            let data = { type: 'LEGIT', rsrp: -85+Math.random()*5, rssi: -65+Math.random()*5, sinr: 15, tac: 35173, ta: 2, neighbors: 8, rat: 'LTE', msg: "System healthy." };
+            if (t > 20 && t < 30) { data.type = 'WARN'; data.rsrp = -105; data.rssi = -60; data.msg = "High Noise Floor (Jamming?)."; if(Math.random()>0.7) logAlert("SPECTRAL", "High Interference."); }
+            if (t > 50 && t < 60) { data.type = 'THREAT'; data.tac = 66666; data.rsrp = -55; data.neighbors = 0; data.ta = 0; data.msg = "TAC Mismatch (Island)."; if(Math.random()>0.8) logAlert("IMSI CATCHER", "TAC Mismatch detected."); }
+            if (t > 80 && t < 90) { data.type = 'THREAT'; data.rat = 'GSM'; data.msg = "Forced GSM Handover."; if(Math.random()>0.8) logAlert("INTERCEPTION", "Forced 2G Downgrade."); }
+            return data;
+        }
+
+        function updateDashboard(data) {
+            document.getElementById('dist-est').innerText = `~${data.ta * 78} m`;
+            document.getElementById('ta-val-display').innerText = data.ta;
+
+            history.rsrp.shift(); history.rsrp.push(data.rsrp);
+            history.rssi.shift(); history.rssi.push(data.rssi);
+            history.labels.shift(); history.labels.push('');
+            signalChart.update();
+
+            let taVal = Math.min(data.ta, 63);
+            taChart.data.datasets[0].data = [taVal, 63 - taVal];
+            taChart.data.datasets[0].backgroundColor[0] = data.type === 'THREAT' && data.ta === 0 ? '#ef4444' : '#3b82f6';
+            taChart.update();
+
+            logConsole(data.msg, data.type);
+            sessionLogs.push(`[${new Date().toLocaleTimeString()}] ${data.msg}`);
+        }
+
+        function updateMapVisuals(data) {
+            ueCluster.forEach((ue, i) => { ueMarkers[i].setLatLng([ue.lat, ue.lon]); });
+            if(tick % 5 === 0) map.panTo([ueCluster[0].lat, ueCluster[0].lon]);
+
+            if (data.type === 'THREAT') {
+                const rogueLat = ueCluster[0].lat + 0.001;
+                const rogueLon = ueCluster[0].lon + 0.001;
+
+                // Create or Update Active Threat Marker
+                if (!activeThreatMarker) {
+                    const icon = L.divIcon({ className: 'custom-icon', html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.5l8.5 14.5h-17L12 5.5z" fill="#ef4444" stroke="black"/></svg>`, iconSize: [24, 24], iconAnchor: [12, 12] });
+                    activeThreatMarker = L.marker([rogueLat, rogueLon], { icon: icon }).addTo(map).bindPopup("<b>ROGUE EMITTER (ACTIVE)</b>").openPopup();
+
+                    // Add Ring
+                    if(!taCircle) {
+                        taCircle = L.circle([ueCluster[0].lat, ueCluster[0].lon], { color: 'red', fillColor: '#f03', fillOpacity: 0.1, radius: 100 }).addTo(map);
+                    }
+                } else {
+                    activeThreatMarker.setLatLng([rogueLat, rogueLon]);
+                    if(taCircle) taCircle.setLatLng([ueCluster[0].lat, ueCluster[0].lon]);
+                }
+            } else {
+                // Threat Ended - Persist Pin as "History"
+                if (activeThreatMarker) {
+                    activeThreatMarker.bindPopup("<b>PAST DETECTION</b><br>Logged: " + new Date().toLocaleTimeString());
+                    activeThreatMarker.setOpacity(0.6); // Dim it
+                    activeThreatMarker = null; // Detach reference so we create a NEW one next time
+
+                    // Remove the ring (reduce clutter) but keep the pin
+                    if (taCircle) { map.removeLayer(taCircle); taCircle = null; }
+                }
+            }
+        }
+
+        function logConsole(text, type='INFO') {
+            const consoleDiv = document.getElementById('console-log');
+            const newLine = document.createElement('div');
+            newLine.className = type === 'THREAT' ? "text-red-400 font-bold" : (type === 'WARN' ? "text-amber-400" : "text-slate-400");
+            newLine.innerText = `> ${text}`;
+            consoleDiv.prepend(newLine);
+            if (consoleDiv.children.length > 20) consoleDiv.lastChild.remove();
+        }
+
+        let activeAlerts = new Set();
+        function logAlert(category, text) {
+            const id = category + text;
+            if (activeAlerts.has(id)) return;
+            activeAlerts.add(id);
+            setTimeout(() => activeAlerts.delete(id), 5000);
+
+            const feed = document.getElementById('alert-feed');
+            const el = document.createElement('div');
+            el.className = "p-3 rounded bg-red-50 border-l-4 border-red-500 shadow-sm animate-pulse relative group transition-all hover:bg-red-100";
+            const safeText = text.replace(/'/g, "\\'");
+            const safeCategory = category.replace(/'/g, "\\'");
+            el.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <span class="text-[9px] font-bold text-red-600 uppercase tracking-wider">${category}</span>
+                </div>
+                <p class="text-xs font-bold text-slate-800 mt-1 mb-2">${text}</p>
+                <button onclick="analyzeThreat('${safeCategory}', '${safeText}')" class="w-full text-[10px] flex items-center justify-center gap-1.5 bg-white text-indigo-600 font-bold py-1.5 rounded border border-indigo-100 hover:border-indigo-300 transition shadow-sm">
+                    <span>✨ Analyze Threat</span>
+                </button>
+            `;
+            feed.prepend(el);
+            const placeholder = feed.querySelector('.absolute');
+            if(placeholder) placeholder.style.display = 'none';
+        }
+
+        const modal = document.getElementById('ai-modal');
+        const modalBody = document.getElementById('modal-body');
+        const modalTitle = document.getElementById('modal-title');
+        const modalContent = document.getElementById('ai-modal-content');
+
+        function openModal(title, contentHTML) {
+            modalTitle.innerText = title; modalBody.innerHTML = contentHTML; modal.classList.remove('hidden');
+            setTimeout(() => { modal.classList.remove('opacity-0'); modalContent.classList.remove('scale-95'); }, 10);
+        }
+        function closeModal() {
+            modal.classList.add('opacity-0'); modalContent.classList.add('scale-95');
+            setTimeout(() => modal.classList.add('hidden'), 300);
+        }
+
+        async function analyzeThreat(category, alertText) {
+            const wasPlaying = isPlaying; if(isPlaying) toggleSimulation();
+            openModal("Analyzing Threat...", `<div class="flex flex-col items-center justify-center h-48 space-y-4"><div class="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div><p class="text-slate-500 font-medium animate-pulse">Consulting Gemini Security Grid...</p></div>`);
+
+            const context = { metrics: { rsrp: lastCellData?.rsrp || "?", neighbors: lastCellData?.neighbors || 0 } };
+            const sysPrompt = "You are a Spectral Security Expert. Short, tactical response.";
+            const userPrompt = `Alert: ${category} - ${alertText}. Telemetry: RSRP ${context.metrics.rsrp}. Explain & Action.`;
+
+            const response = await callGemini(userPrompt, sysPrompt);
+            openModal("Threat Analysis", marked.parse(response));
+        }
+
+        async function generateMissionReport() {
+            const wasPlaying = isPlaying; if(isPlaying) toggleSimulation();
+            openModal("Generating Report...", `<div class="flex flex-col items-center justify-center h-48 space-y-4"><div class="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div><p class="text-slate-500 font-medium animate-pulse">Compiling SITREP...</p></div>`);
+
+            const logs = sessionLogs.slice(-25).join("\n");
+            const response = await callGemini(`Generate SITREP from logs:\n${logs}`, "Military Comms Specialist. Strict SITREP format.");
+            openModal("Mission Report", marked.parse(response));
+        }
+    </script>
+</body>
+</html>
