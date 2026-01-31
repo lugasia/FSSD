@@ -1,10 +1,11 @@
 <!-- Chosen Palette: "Clean Slate Security" - Light gray backgrounds (#f8fafc), White cards (#ffffff), Deep Navy text (#1e293b). Accents: Legit (Teal #14b8a6), Warning (Amber #f59e0b), Threat (Rose #e11d48). -->
 
 <!--
-    FIXES V7:
-    1. **Speed Control Restored:** Added 1x/2x/5x selector back to the header control bar.
-    2. **Layout:** Maintained V6 Split-Screen (Map Top, Data Bottom).
-    3. **TA Bar:** Maintained the "Distance Meter" visualization.
+    FLYCOMM SENTINEL DASHBOARD - FINAL BUILD V2
+
+    UPDATES:
+    1. **SIB3 Integration:** Added specific SIB3 parameters (q-Hyst, ReselectPrio) to 4G/5G tables.
+    2. **Dynamic SIB3 Logic:** q-Hyst turns RED (0dB) during IMSI Catcher attacks to simulate "Vacuum" behavior.
 -->
 
 <!DOCTYPE html>
@@ -12,7 +13,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flycomm Sentinel | Multi-UE Spectral Dashboard</title>
+    <title>Flycomm Sentinel | Spectral Awareness Dashboard</title>
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -31,9 +32,9 @@
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; color: #1e293b; }
 
+        /* Layout Utilities */
         .chart-wrapper { position: relative; width: 100%; height: 100%; overflow: hidden; }
         .glass-panel { background: white; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); border-radius: 0.75rem; display: flex; flex-direction: column; }
-
         .scrolling-log { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
         .scrolling-log::-webkit-scrollbar { width: 6px; }
         .scrolling-log::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
@@ -41,14 +42,21 @@
         /* Map Styles */
         #tactical-map { z-index: 1; background: #e2e8f0; height: 100%; width: 100%; }
 
-        /* Markdown Styles */
-        .markdown-body h1 { font-size: 1.25em; font-weight: bold; margin-bottom: 0.5em; color: #1e293b; }
-        .markdown-body p { margin-bottom: 0.8em; line-height: 1.5; color: #475569; }
-        .markdown-body ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 0.8em; }
-        .markdown-body strong { font-weight: 600; color: #0f172a; }
+        /* Table Styles */
+        .sib-table { width: 100%; text-align: left; font-size: 10px; border-collapse: collapse; }
+        .sib-table th { background-color: #f8fafc; color: #64748b; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+        .sib-table td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; color: #334155; font-family: 'Courier New', monospace; }
+        .sib-table tr:last-child td { border-bottom: none; }
+        .sib-table tr:hover { background-color: #f8fafc; }
 
-        /* TA Meter Animation */
+        /* Tabs */
+        .tab-btn { font-size: 10px; font-weight: 600; padding: 6px 12px; border-radius: 6px 6px 0 0; color: #64748b; background: #f1f5f9; border: 1px solid transparent; transition: all 0.2s; }
+        .tab-btn.active { background: white; color: #2563eb; border-color: #e2e8f0; border-bottom-color: white; margin-bottom: -1px; z-index: 10; }
+
+        /* Animations */
         .meter-fill { transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s; }
+        .tab-content { animation: fadeIn 0.2s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden bg-slate-50">
@@ -64,21 +72,21 @@
         </div>
 
         <div class="flex items-center gap-3">
+            <!-- Settings -->
             <button onclick="openSettings()" class="flex items-center gap-1.5 px-3 py-1 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-md transition text-[10px] font-bold border border-slate-200 uppercase tracking-wide">
                 <span>🔑</span> API Key
             </button>
+
+            <!-- AI Report -->
             <button onclick="generateMissionReport()" class="flex items-center gap-2 px-3 py-1 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-md shadow-sm hover:shadow-md transition text-xs font-semibold">
                 <span>✨ Report</span>
             </button>
-            <!-- Simulation Controls with Speed -->
+
+            <!-- Sim Controls -->
             <div class="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200">
                 <button id="btn-play" class="px-3 py-0.5 bg-white shadow-sm rounded-md text-slate-700 text-xs font-bold hover:text-blue-600 transition" onclick="toggleSimulation()">▶ Play</button>
                 <button id="btn-pause" class="px-3 py-0.5 text-slate-500 text-xs font-bold hover:text-blue-600 transition hidden" onclick="toggleSimulation()">⏸ Pause</button>
-
-                <!-- Separator -->
                 <div class="w-px h-3 bg-slate-300 mx-2"></div>
-
-                <!-- Speed Selector -->
                 <span class="text-[10px] text-slate-500 pr-1">Speed:</span>
                 <select id="sim-speed" class="bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer">
                     <option value="1000">1x</option>
@@ -99,7 +107,6 @@
                     <span class="text-lg">📍</span> Tactical Map
                 </h2>
             </div>
-            <!-- Map Container -->
             <div id="tactical-map" class="bg-slate-200 flex items-center justify-center">
                 <span class="text-slate-400 animate-pulse font-medium">Loading Map Engine...</span>
             </div>
@@ -147,45 +154,120 @@
                 </div>
             </div>
 
-            <!-- Column 3: Stacked TA & Log -->
+            <!-- Column 3: TA & SIB Tables -->
             <div class="flex flex-col gap-3 min-h-0">
 
                 <!-- Timing Advance (Small Bar) -->
-                <div class="glass-panel p-3 shrink-0 h-24 justify-center">
-                    <div class="flex justify-between items-end mb-2">
+                <div class="glass-panel p-3 shrink-0 h-20 justify-center">
+                    <div class="flex justify-between items-end mb-1">
                         <div>
-                            <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wide">Timing Advance (Distance)</h3>
+                            <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wide">Timing Advance (Dist)</h3>
                             <span id="ta-status-text" class="text-[10px] text-emerald-600 font-semibold">Signal Verified</span>
                         </div>
                         <div class="text-right">
-                             <span id="ta-val-display" class="text-lg font-bold text-slate-700">2</span>
-                             <span class="text-[10px] text-slate-400 ml-1">idx</span>
-                             <div id="dist-est" class="text-[10px] text-slate-500 font-mono">~156 m</div>
+                             <span id="ta-val-display" class="text-base font-bold text-slate-700">2</span>
+                             <span class="text-[9px] text-slate-400">idx</span>
                         </div>
                     </div>
                     <!-- Meter Bar -->
-                    <div class="w-full h-3 bg-slate-100 rounded-full overflow-hidden relative border border-slate-200">
-                        <!-- Markers -->
+                    <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden relative border border-slate-200">
                         <div class="absolute left-[3%] top-0 bottom-0 w-px bg-red-300 z-10" title="Danger Zone"></div>
-
-                        <!-- Fill -->
                         <div id="ta-meter-fill" class="meter-fill h-full bg-blue-500 rounded-full" style="width: 10%;"></div>
                     </div>
-                    <div class="flex justify-between text-[8px] text-slate-400 mt-1 font-mono">
-                        <span>0 (Danger)</span>
-                        <span>10</span>
-                        <span>20+</span>
+                    <div class="flex justify-between text-[8px] text-slate-400 mt-0.5 font-mono">
+                        <span>0 (DANGER)</span>
+                        <span>~1.5km</span>
                     </div>
                 </div>
 
-                <!-- SIB Polling Log -->
+                <!-- SIB Decoder Tables -->
                 <div class="glass-panel p-0 overflow-hidden flex flex-col flex-1 min-h-0">
-                    <div class="p-2 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
-                        <h2 class="font-bold text-slate-800 text-[10px] uppercase tracking-wide">SIB Polling Stream</h2>
-                        <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                    <!-- Tabs -->
+                    <div class="flex border-b border-slate-200 bg-slate-50 px-2 pt-2 gap-1">
+                        <button onclick="switchTab('5g')" id="tab-5g" class="tab-btn active">5G NR</button>
+                        <button onclick="switchTab('4g')" id="tab-4g" class="tab-btn">4G LTE</button>
+                        <button onclick="switchTab('3g')" id="tab-3g" class="tab-btn">3G</button>
+                        <button onclick="switchTab('2g')" id="tab-2g" class="tab-btn">2G GSM</button>
                     </div>
-                    <div class="p-2 bg-slate-900 text-slate-300 font-mono text-[10px] leading-relaxed flex-1 overflow-y-auto scrolling-log" id="console-log">
-                        <div class="text-slate-500">> Booting SDK...</div>
+
+                    <!-- Table Content Area -->
+                    <div class="flex-1 overflow-y-auto scrolling-log relative bg-white">
+
+                        <!-- 5G Table -->
+                        <div id="content-5g" class="tab-content block p-0">
+                            <table class="sib-table">
+                                <thead><tr><th>Param</th><th>Value</th><th>Source</th></tr></thead>
+                                <tbody>
+                                    <tr><td>NR-ARFCN</td><td>640000</td><td>SIB1</td></tr>
+                                    <tr><td>PCI</td><td>154</td><td>PSS/SSS</td></tr>
+                                    <tr><td>TAC</td><td>35173</td><td>SIB1</td></tr>
+                                    <tr class="bg-slate-50 border-l-2 border-slate-300">
+                                        <td>q-Hyst</td>
+                                        <td id="val-5g-hyst">4 dB</td>
+                                        <td>SIB3</td>
+                                    </tr>
+                                    <tr><td>Bandwidth</td><td>100 MHz</td><td>SIB1</td></tr>
+                                    <tr><td>RxLevMin</td><td>-120</td><td>SIB1</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 4G Table -->
+                        <div id="content-4g" class="tab-content hidden p-0">
+                            <table class="sib-table">
+                                <thead><tr><th>Param</th><th>Value</th><th>Source</th></tr></thead>
+                                <tbody>
+                                    <tr><td>EARFCN</td><td>1801</td><td>SIB1</td></tr>
+                                    <tr><td>PCI</td><td>120</td><td>PSS/SSS</td></tr>
+                                    <tr><td>TAC</td><td>35173</td><td>SIB1</td></tr>
+                                    <!-- SIB3 Params -->
+                                    <tr class="bg-slate-50 border-l-2 border-slate-300">
+                                        <td>q-Hyst</td>
+                                        <td id="val-4g-hyst">4 dB</td>
+                                        <td>SIB3</td>
+                                    </tr>
+                                    <tr class="bg-slate-50 border-l-2 border-slate-300">
+                                        <td>ReselectPrio</td>
+                                        <td>5</td>
+                                        <td>SIB3</td>
+                                    </tr>
+                                    <tr><td>Neighbors</td><td>8</td><td>SIB4/5</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 3G Table -->
+                        <div id="content-3g" class="tab-content hidden p-0">
+                            <table class="sib-table">
+                                <thead><tr><th>Param</th><th>Value</th><th>Desc</th></tr></thead>
+                                <tbody>
+                                    <tr><td>UARFCN</td><td>10700</td><td>DL Freq</td></tr>
+                                    <tr><td>PSC</td><td>42</td><td>Scrambling</td></tr>
+                                    <tr><td>LAC</td><td>14020</td><td>Loc Area</td></tr>
+                                    <tr><td>RSCP</td><td>-95</td><td>Signal</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 2G Table (WITH CRO) -->
+                        <div id="content-2g" class="tab-content hidden p-0">
+                            <table class="sib-table">
+                                <thead><tr><th>Param</th><th>Value</th><th>Flag</th></tr></thead>
+                                <tbody>
+                                    <tr><td>ARFCN</td><td>124</td><td>BCCH</td></tr>
+                                    <tr><td>BSIC</td><td>63</td><td>Base ID</td></tr>
+                                    <tr><td>RxLev</td><td>-70</td><td>Strong</td></tr>
+                                    <tr class="bg-slate-50 border-l-2 border-slate-300">
+                                        <td class="font-bold text-slate-700">CRO</td>
+                                        <td id="val-cro" class="font-bold text-slate-600">0</td>
+                                        <td id="flag-cro" class="text-[9px] text-slate-400">Normal</td>
+                                    </tr>
+                                    <tr><td>C1</td><td>32</td><td>Access</td></tr>
+                                    <tr><td>C2</td><td>32</td><td>Reselect</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
                     </div>
                 </div>
 
@@ -194,12 +276,11 @@
 
     </main>
 
-    <!-- Settings Modal -->
+    <!-- Modals -->
     <div id="settings-modal" class="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 transform scale-95 transition-transform duration-300" id="settings-content">
             <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><span>🔑</span> API Key Configuration</h3>
             <div class="mb-4">
-                <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Google Gemini API Key</label>
                 <input type="password" id="api-key-input" placeholder="Paste key here..." class="w-full p-3 border border-slate-300 rounded-lg text-sm focus:border-blue-500 outline-none shadow-sm">
             </div>
             <div class="flex justify-end gap-2">
@@ -209,7 +290,6 @@
         </div>
     </div>
 
-    <!-- AI Modal -->
     <div id="ai-modal" class="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col m-4 overflow-hidden transform scale-95 transition-transform duration-300 border border-white/20" id="ai-modal-content">
             <div class="bg-gradient-to-r from-indigo-600 to-purple-700 p-4 flex justify-between items-center shrink-0 text-white">
@@ -228,15 +308,10 @@
         let userApiKey = localStorage.getItem('gemini_api_key') || "";
         const envApiKey = "";
         function getApiKey() { return userApiKey || envApiKey; }
-
-        const settingsModal = document.getElementById('settings-modal');
-        const settingsContent = document.getElementById('settings-content');
-        const apiKeyInput = document.getElementById('api-key-input');
-
+        const settingsModal = document.getElementById('settings-modal'), settingsContent = document.getElementById('settings-content'), apiKeyInput = document.getElementById('api-key-input');
         function openSettings() { apiKeyInput.value = userApiKey; settingsModal.classList.remove('hidden'); setTimeout(() => { settingsModal.classList.remove('opacity-0'); settingsContent.classList.remove('scale-95'); }, 10); }
         function closeSettings() { settingsModal.classList.add('opacity-0'); settingsContent.classList.add('scale-95'); setTimeout(() => settingsModal.classList.add('hidden'), 300); }
         function saveSettings() { userApiKey = apiKeyInput.value.trim(); localStorage.setItem('gemini_api_key', userApiKey); closeSettings(); }
-
         async function callGemini(prompt, sysPrompt) {
             const key = getApiKey(); if (!key) { openSettings(); return "Error: API Key missing."; }
             try {
@@ -250,11 +325,20 @@
             } catch (e) { return `Error: ${e.message}`; }
         }
 
+        // --- Tabs Logic ---
+        function switchTab(rat) {
+            ['5g','4g','3g','2g'].forEach(r => {
+                document.getElementById(`tab-${r}`).classList.remove('active');
+                document.getElementById(`content-${r}`).classList.add('hidden');
+            });
+            document.getElementById(`tab-${rat}`).classList.add('active');
+            document.getElementById(`content-${rat}`).classList.remove('hidden');
+        }
+
         // --- State ---
         const START_LAT = 30.48578;
         const START_LON = 35.175086;
         let isPlaying = false, tick = 0, speed = 1000, timer = null, sessionLogs = [];
-
         let ueCluster = Array.from({length:5}, (_, i) => ({ id: `UE-0${i+1}`, lat: START_LAT, lon: START_LON }));
         let history = { rsrp: Array(30).fill(-90), rssi: Array(30).fill(-70), labels: Array(30).fill('') };
         const LEGIT_TOWERS = [{ id: '425-01-1801', lat: 30.488, lon: 35.178 }, { id: '425-01-1802', lat: 30.483, lon: 35.172 }];
@@ -273,18 +357,14 @@
             try {
                 map = L.map('tactical-map', { center: [START_LAT, START_LON], zoom: 16, zoomControl: false, attributionControl: false });
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-
                 const createIcon = (color, shape) => {
                     const svg = shape === 'circle'
                         ? `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="${color}" stroke="white" stroke-width="2"/></svg>`
                         : `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M8 0L16 16H0L8 0Z" fill="${color}" stroke="white" stroke-width="2"/></svg>`;
                     return L.divIcon({ className: 'custom-icon', html: svg, iconSize: [16, 16], iconAnchor: [8, 8] });
                 };
-
                 LEGIT_TOWERS.forEach(t => L.marker([t.lat, t.lon], { icon: createIcon('#1e293b', 'triangle') }).addTo(map).bindPopup(`Legit Cell: ${t.id}`));
                 ueCluster.forEach((ue, i) => ueMarkers.push(L.marker([ue.lat, ue.lon], { icon: createIcon(i===0?'#3b82f6':'#93c5fd', 'circle') }).addTo(map)));
-
-                logConsole("Map Engine Online.");
             } catch(e) { document.getElementById('tactical-map').innerHTML = "Map Error"; }
         };
 
@@ -295,11 +375,7 @@
             document.getElementById('btn-pause').classList.toggle('hidden');
             if(isPlaying) runLoop(); else clearTimeout(timer);
         }
-
-        // Speed Control Listener
-        document.getElementById('sim-speed').addEventListener('change', (e) => {
-            speed = parseInt(e.target.value);
-        });
+        document.getElementById('sim-speed').addEventListener('change', (e) => { speed = parseInt(e.target.value); });
 
         function runLoop() {
             if(!isPlaying) return;
@@ -308,47 +384,78 @@
             // Move UEs
             ueCluster.forEach(ue => { ue.lat += (Math.random()-0.5)*0.0001; ue.lon += (Math.random()-0.5)*0.0001; });
 
-            let cellData = { type: 'LEGIT', rsrp: -85+Math.random()*5, rssi: -65+Math.random()*5, ta: 2+Math.floor(Math.random()*3), msg: "System healthy." };
-            if (tick>20 && tick<30) { cellData.type = 'WARN'; cellData.rsrp = -105; cellData.rssi = -60; cellData.msg = "High Noise Floor."; if(Math.random()>0.7) logAlert("SPECTRAL", "High Interference."); }
-            if (tick>50 && tick<60) { cellData.type = 'THREAT'; cellData.tac = 66666; cellData.ta = 0; cellData.msg = "TAC Mismatch."; if(Math.random()>0.8) logAlert("IMSI CATCHER", "Zero TA + TAC Mismatch."); }
-            if (tick>80 && tick<90) { cellData.type = 'THREAT'; cellData.rat = 'GSM'; cellData.msg = "Forced GSM."; if(Math.random()>0.8) logAlert("INTERCEPTION", "Forced 2G."); }
+            let cellData = { type: 'LEGIT', rsrp: -85+Math.random()*5, rssi: -65+Math.random()*5, ta: 2+Math.floor(Math.random()*3), msg: "System healthy.", sib3_hyst: "4 dB" };
+            let activeRat = '4g'; // Default
 
-            updateDashboard(cellData);
+            // SCENARIOS
+            if (tick>20 && tick<30) {
+                cellData.type = 'WARN'; cellData.rsrp = -105; cellData.rssi = -60; cellData.msg = "High Noise Floor.";
+                if(Math.random()>0.7) logAlert("SPECTRAL", "High Interference.");
+            }
+            if (tick>50 && tick<60) {
+                cellData.type = 'THREAT'; cellData.tac = 66666; cellData.ta = 0; cellData.msg = "TAC Mismatch.";
+                cellData.sib3_hyst = "0 dB"; // SIB3 ATTACK
+                if(Math.random()>0.8) logAlert("IMSI CATCHER", "Zero TA + TAC Mismatch.");
+            }
+            if (tick>80 && tick<90) {
+                activeRat = '2g'; // Switch to 2G
+                cellData.type = 'THREAT'; cellData.rat = 'GSM'; cellData.msg = "Forced GSM.";
+                cellData.cro = 40; // HIGH CRO
+                if(Math.random()>0.8) logAlert("INTERCEPTION", "Forced 2G + High CRO.");
+            }
+
+            updateDashboard(cellData, activeRat);
             if(map) updateMapVisuals(cellData);
 
             lastCellData = cellData;
             timer = setTimeout(runLoop, speed);
         }
 
-        function updateDashboard(data) {
+        function updateDashboard(data, activeRat) {
             document.getElementById('val-rsrp').innerText = Math.round(data.rsrp) + " dBm";
 
-            // TA Meter Logic
+            // TA Meter
             document.getElementById('ta-val-display').innerText = data.ta;
-            document.getElementById('dist-est').innerText = `~${data.ta * 78} m`;
             const taFill = document.getElementById('ta-meter-fill');
-            const taText = document.getElementById('ta-status-text');
-
-            // Width %: Max TA usually ~60. Let's scale 0-30 for visibility.
             let width = Math.min((data.ta / 20) * 100, 100);
-            taFill.style.width = Math.max(width, 2) + "%"; // min 2% width
-
+            taFill.style.width = Math.max(width, 2) + "%";
             if(data.type === 'THREAT' && data.ta === 0) {
                 taFill.classList.remove('bg-blue-500'); taFill.classList.add('bg-red-600', 'animate-pulse');
-                taText.innerText = "⚠️ DANGER: 0m (SOURCE)";
-                taText.classList.remove('text-emerald-600'); taText.classList.add('text-red-600');
+                document.getElementById('ta-status-text').innerText = "⚠️ DANGER: 0m";
             } else {
                 taFill.classList.add('bg-blue-500'); taFill.classList.remove('bg-red-600', 'animate-pulse');
-                taText.innerText = "Signal Verified";
-                taText.classList.add('text-emerald-600'); taText.classList.remove('text-red-600');
+                document.getElementById('ta-status-text').innerText = "Signal Verified";
+            }
+
+            // AUTO TAB & SIB Logic
+            if(activeRat === '2g') {
+                switchTab('2g');
+                document.getElementById('val-cro').innerText = data.cro + " dB";
+                document.getElementById('val-cro').classList.add('text-red-600');
+                document.getElementById('flag-cro').innerText = "AGGRESSIVE";
+                document.getElementById('flag-cro').className = "text-[9px] font-bold text-red-600 animate-pulse";
+            } else {
+                if(activeRat === '4g') switchTab('4g');
+
+                // Update SIB3 Values
+                const hystElem = document.getElementById('val-4g-hyst');
+                hystElem.innerText = data.sib3_hyst;
+                if(data.sib3_hyst === "0 dB") {
+                    hystElem.className = "font-bold text-red-600 animate-pulse";
+                } else {
+                    hystElem.className = "text-slate-600";
+                }
+
+                document.getElementById('val-cro').innerText = "0";
+                document.getElementById('val-cro').classList.remove('text-red-600');
+                document.getElementById('flag-cro').innerText = "Normal";
+                document.getElementById('flag-cro').className = "text-[9px] text-slate-400";
             }
 
             history.rsrp.shift(); history.rsrp.push(data.rsrp);
             history.rssi.shift(); history.rssi.push(data.rssi);
             history.labels.shift(); history.labels.push('');
             signalChart.update();
-
-            logConsole(data.msg, data.type);
             sessionLogs.push(`[${new Date().toLocaleTimeString()}] ${data.msg}`);
         }
 
@@ -370,12 +477,6 @@
             }
         }
 
-        function logConsole(text, type='INFO') {
-            const d = document.getElementById('console-log'), l = document.createElement('div');
-            l.className = type === 'THREAT' ? "text-red-400 font-bold" : (type === 'WARN' ? "text-amber-400" : "text-slate-400");
-            l.innerText = `> ${text}`; d.prepend(l); if (d.children.length > 20) d.lastChild.remove();
-        }
-
         let activeAlerts = new Set();
         function logAlert(cat, text) {
             const id = cat+text; if(activeAlerts.has(id)) return; activeAlerts.add(id); setTimeout(()=>activeAlerts.delete(id),5000);
@@ -386,7 +487,6 @@
             const ph = document.getElementById('alert-feed').querySelector('.absolute'); if(ph) ph.style.display='none';
         }
 
-        // --- Modals ---
         const modal = document.getElementById('ai-modal'), mBody = document.getElementById('modal-body'), mTitle = document.getElementById('modal-title');
         function openModal(t, h) { mTitle.innerText = t; mBody.innerHTML = h; modal.classList.remove('hidden'); setTimeout(()=>modal.classList.remove('opacity-0'),10); }
         function closeModal() { modal.classList.add('opacity-0'); setTimeout(()=>modal.classList.add('hidden'),300); }
